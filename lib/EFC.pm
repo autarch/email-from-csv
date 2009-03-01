@@ -6,8 +6,9 @@ use warnings;
 use Email::Address;
 use Email::Date;
 use Email::MessageID;
-use Email::Sender;
+use Email::Send;
 use Email::Simple::Creator;
+use Email::Valid;
 use IO::File;
 use Text::CSV_XS;
 use Text::Template;
@@ -32,7 +33,7 @@ has '_body_template' =>
     ( is      => 'ro',
       isa     => 'Text::Template',
       lazy    => 1,
-      builder => '_body_subject_template',
+      builder => '_build_body_template',
     );
 
 class_type( 'Email::Address' );
@@ -42,12 +43,13 @@ subtype 'EFC.EmailAddress'
 
 coerce 'EFC.EmailAddress'
     => from 'Str'
-    => via { Email::Address->parse($_) };
+    => via { ( Email::Address->parse($_) )[0] };
 
 has 'from' =>
     ( is       => 'ro',
       isa      => 'EFC.EmailAddress',
       required => 1,
+      coerce   => 1,
     );
 
 has 'subject' =>
@@ -82,9 +84,19 @@ has 'test' =>
     );
 
 MooseX::Getopt::OptionTypeMap->add_option_type_to_map
-    ( 'EFC.File'         => '=s',
-      'EFC.EmailAddress' => '=s',
+    ( 'EFC.File'         => '=s' );
+
+MooseX::Getopt::OptionTypeMap->add_option_type_to_map
+    ( 'EFC.EmailAddress' => '=s' );
+
+$Email::Send::Sendmail::SENDMAIL = '/usr/sbin/sendmail';
+
+has '_sender' =>
+    ( is      => 'ro',
+      isa     => 'Email::Send',
+      default => sub { Email::Send->new( { mailer => 'Sendmail' } ) },
     );
+
 
 
 sub BUILD
@@ -133,6 +145,11 @@ sub run
     {
         my $fields = $csv->getline_hr($io);
 
+        next unless
+            defined $fields->{email} && length $fields->{email};
+
+        next unless Email::Valid->address( $fields->{email} );
+
         my $email = $self->_create_email($fields);
 
         if ( $self->send() || $self->test() )
@@ -173,7 +190,7 @@ sub _create_email
                 To             => $to,
                 Subject        => $subject,
                 Date           => Email::Date::format_date(time),
-                'Message-Id'   => Email::MessageID->new,
+                'Message-Id'   => Email::MessageID->new()->in_brackets(),
                 'Content-Type' => 'text/plain; charset=ascii',
               ],
               body => $body,
@@ -182,7 +199,10 @@ sub _create_email
 
 sub _send_email
 {
+    my $self  = shift;
+    my $email = shift;
 
+    $self->_sender()->send($email);
 }
 
 no Moose;
