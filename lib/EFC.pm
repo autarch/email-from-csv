@@ -27,6 +27,19 @@ has 'name' =>
       required => 1,
     );
 
+has 'dir' =>
+    ( is      => 'ro',
+      isa     => 'Str',
+      default => q{.},
+    );
+
+has '_body_file' =>
+    ( is      => 'ro',
+      isa     => 'Str',
+      lazy    => 1,
+      default => sub { $_[0]->dir() . q{/} . $_[0]->name() . '-body' },
+    );
+
 has '_body_template' =>
     ( is      => 'ro',
       isa     => 'Text::Template',
@@ -61,6 +74,13 @@ has '_subject_template' =>
       isa     => 'Text::Template',
       lazy    => 1,
       builder => '_build_subject_template',
+    );
+
+has '_csv_file' =>
+    ( is      => 'ro',
+      isa     => 'Str',
+      lazy    => 1,
+      default => sub { $_[0]->dir() . q{/} . $_[0]->name() . '.csv' },
     );
 
 has 'send' =>
@@ -112,9 +132,7 @@ sub _build_body_template
 {
     my $self = shift;
 
-    my $body_file = $self->name() . '-body';
-
-    my $body = read_file($body_file)
+    my $body = read_file( $self->_body_file() )
         or die 'empty body';
 
     $self->_demoronize($body);
@@ -136,7 +154,7 @@ sub run
 
     my $csv = Text::CSV_XS->new( { binary => 1 } );
 
-    my $io = IO::File->new( $self->name() . '.csv', 'r' )
+    my $io = IO::File->new( $self->_csv_file(), 'r' )
         or die $!;
 
     my $header = $csv->getline($io);
