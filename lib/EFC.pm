@@ -9,6 +9,8 @@ use Email::MessageID;
 use Email::Send;
 use Email::Simple::Creator;
 use Email::Valid;
+use Encode::ZapCP1252 qw( zap_cp1252 );
+use File::Slurp;
 use IO::File;
 use Text::CSV_XS;
 use Text::Template;
@@ -19,13 +21,9 @@ use Moose::Util::TypeConstraints;
 
 with 'MooseX::Getopt';
 
-subtype 'EFC.File'
-    => as 'Str'
-    => where { -f $_ };
-
-has 'body' =>
+has 'name' =>
     ( is       => 'ro',
-      isa      => 'EFC.File',
+      isa      => 'Str',
       required => 1,
     );
 
@@ -65,12 +63,6 @@ has '_subject_template' =>
       builder => '_build_subject_template',
     );
 
-has 'source' =>
-    ( is       => 'ro',
-      isa      => 'EFC.File',
-      required => 1,
-    );
-
 has 'send' =>
     ( is      => 'ro',
       isa     => 'Bool',
@@ -82,9 +74,6 @@ has 'test' =>
       isa     => 'Bool',
       default => 0,
     );
-
-MooseX::Getopt::OptionTypeMap->add_option_type_to_map
-    ( 'EFC.File'         => '=s' );
 
 MooseX::Getopt::OptionTypeMap->add_option_type_to_map
     ( 'EFC.EmailAddress' => '=s' );
@@ -123,7 +112,22 @@ sub _build_body_template
 {
     my $self = shift;
 
-    return Text::Template->new( TYPE => 'FILE', SOURCE => $self->body() );
+    my $body_file = $self->name() . '-body';
+
+    my $body = read_file($body_file)
+        or die 'empty body';
+
+    $self->_demoronize($body);
+
+    return Text::Template->new( TYPE => 'STRING', SOURCE => $body );
+}
+
+sub _demoronize
+{
+    my $self = shift;
+    my $body = shift;
+
+    zap_cp1252($body);
 }
 
 sub run
@@ -132,7 +136,7 @@ sub run
 
     my $csv = Text::CSV_XS->new( { binary => 1 } );
 
-    my $io = IO::File->new( $self->source(), 'r' )
+    my $io = IO::File->new( $self->name() . '.csv', 'r' )
         or die $!;
 
     my $header = $csv->getline($io);
