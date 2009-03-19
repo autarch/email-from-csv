@@ -170,6 +170,8 @@ sub run
         next unless
             defined $fields->{email} && length $fields->{email};
 
+        $fields->{email} =~ s/^\s+|\s+$//g;
+
         next unless Email::Valid->address( $fields->{email} );
 
         my $email = $self->_create_email($fields);
