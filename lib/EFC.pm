@@ -2,6 +2,7 @@ package EFC;
 
 use strict;
 use warnings;
+use utf8;
 
 use Email::Address;
 use Email::Date;
@@ -9,6 +10,7 @@ use Email::MessageID;
 use Email::Send;
 use Email::Simple::Creator;
 use Email::Valid;
+use Encode qw( decode );
 use Encode::ZapCP1252 qw( zap_cp1252 );
 use File::Slurp;
 use IO::File;
@@ -132,20 +134,44 @@ sub _build_body_template
 {
     my $self = shift;
 
-    my $body = read_file( $self->_body_file() )
+    my $body = decode( 'utf-8', read_file( $self->_body_file() ) )
         or die 'empty body';
 
-    $self->_demoronize($body);
+    $body = $self->_demoronize($body);
 
     return Text::Template->new( TYPE => 'STRING', SOURCE => $body );
 }
 
-sub _demoronize
 {
-    my $self = shift;
-    my $body = shift;
+    my %map = ( '‚' => ',',     # 82, SINGLE LOW-9 QUOTATION MARK
+                '„' => ',,',    # 84, DOUBLE LOW-9 QUOTATION MARK
+                '…' => '...',   # 85, HORIZONTAL ELLIPSIS
+                'ˆ' => '^',     # 88, MODIFIER LETTER CIRCUMFLEX ACCENT
+                '‘' => "'",     # 91, LEFT SINGLE QUOTATION MARK
+                '’' => "'",     # 92, RIGHT SINGLE QUOTATION MARK
+                '’' => "'",
+                '“' => '"',     # 93, LEFT DOUBLE QUOTATION MARK
+                '”' => '"',     # 94, RIGHT DOUBLE QUOTATION MARK
+                '“' => '"',
+                '”' => '"',
+                '•' => '*',     # 95, BULLET
+                '–' => '-',     # 96, EN DASH
+                '—' => '-',     # 97, EM DASH
+                '‹' => '<',     # 8B, SINGLE LEFT-POINTING ANGLE QUOTATION MARK
+                '›' => '>',     # 9B, SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+              );
 
-    zap_cp1252($body);
+    sub _demoronize
+    {
+        my $self = shift;
+        my $body = shift;
+
+        zap_cp1252($body);
+
+        $body =~ s/$_/$map{$_}/g for keys %map;
+
+        return $body;
+    }
 }
 
 sub run
