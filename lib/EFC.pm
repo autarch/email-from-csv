@@ -82,6 +82,18 @@ has '_csv_file' => (
     default => sub { $_[0]->dir() . q{/} . $_[0]->name() . '.csv' },
 );
 
+has '_seen_map' => (
+    traits   => ['Hash'],
+    is       => 'ro',
+    isa      => 'HashRef[Str]',
+    default  => sub { {} },
+    init_arg => undef,
+    handles  => {
+        _record_as_seen => 'set',
+        _seen           => 'get',
+    },
+);
+
 has 'send' => (
     is      => 'ro',
     isa     => 'Bool',
@@ -184,12 +196,16 @@ sub run {
     until ( $io->eof() ) {
         my $fields = $csv->getline_hr($io);
 
+        my $address = $fields->{email};
+
         next
-            unless defined $fields->{email} && length $fields->{email};
+            unless defined $address && length $address;
 
-        $fields->{email} =~ s/^\s+|\s+$//g;
+        $address =~ s/^\s+|\s+$//g;
 
-        next unless Email::Valid->address( $fields->{email} );
+        next unless Email::Valid->address( $address );
+
+        next if $self->_seen($address);
 
         my $email = $self->_create_email($fields);
 
@@ -197,6 +213,8 @@ sub run {
             $self->_send_email($email);
             exit 0 if $self->test();
         }
+
+        $self->_record_as_seen($address);
     }
 }
 
