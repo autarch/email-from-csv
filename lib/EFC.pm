@@ -4,16 +4,15 @@ use strict;
 use warnings;
 use utf8;
 
+use Courriel::Builder -all => { -prefix => 'cb_' };
 use Email::Address;
-use Email::Date;
-use Email::MessageID;
-use Email::Send;
-use Email::Simple::Creator;
+use Email::Sender::Simple qw( sendmail );
 use Email::Valid;
 use Encode qw( decode );
 use Encode::ZapCP1252 qw( zap_cp1252 );
 use File::Slurp;
 use IO::File;
+use Markdent::Simple::Document;
 use Text::CSV_XS;
 use Text::Template;
 
@@ -50,14 +49,14 @@ has '_body_template' => (
 
 class_type('Email::Address');
 
-subtype 'EFC.EmailAddress' => as 'Email::Address';
+subtype 'EFCEmailAddress' => as 'Email::Address';
 
-coerce 'EFC.EmailAddress' => from 'Str' =>
+coerce 'EFCEmailAddress' => from 'Str' =>
     via { ( Email::Address->parse($_) )[0] };
 
 has 'from' => (
     is       => 'ro',
-    isa      => 'EFC.EmailAddress',
+    isa      => 'EFCEmailAddress',
     required => 1,
     coerce   => 1,
 );
@@ -107,15 +106,7 @@ has 'test' => (
 );
 
 MooseX::Getopt::OptionTypeMap->add_option_type_to_map(
-    'EFC.EmailAddress' => '=s' );
-
-$Email::Send::Sendmail::SENDMAIL = '/usr/sbin/sendmail';
-
-has '_sender' => (
-    is      => 'ro',
-    isa     => 'Email::Send',
-    default => sub { Email::Send->new( { mailer => 'Sendmail' } ) },
-);
+    'EFCEmailAddress' => '=s' );
 
 sub BUILD {
     my $self = shift;
@@ -214,7 +205,7 @@ sub run {
             exit 0 if $self->test();
         }
 
-        $self->_record_as_seen($address);
+        $self->_record_as_seen( $address => 1 );
     }
 }
 
@@ -237,18 +228,19 @@ sub _create_email {
 
     print "Creating email for $fields->{email}\n";
 
+    my $html = Markdent::Simple::Document->new()->markdown_to_html(
+        title    => $subject,
+        markdown => $body,
+    );
+
     my $to = $self->test() ? 'autarch@urth.org' : $fields->{email};
 
-    my $email = Email::Simple->create(
-        header => [
-            From           => $self->from()->as_string(),
-            To             => $to,
-            Subject        => $subject,
-            Date           => Email::Date::format_date(time),
-            'Message-Id'   => Email::MessageID->new()->in_brackets(),
-            'Content-Type' => 'text/plain; charset=ascii',
-        ],
-        body => $body,
+    return cb_build_email(
+        cb_from( $self->from() ),
+        cb_to($to),
+        cb_subject($subject),
+        cb_plain_body($body),
+        cb_html_body($html)
     );
 }
 
@@ -256,7 +248,7 @@ sub _send_email {
     my $self  = shift;
     my $email = shift;
 
-    $self->_sender()->send($email);
+    sendmail($email);
 }
 
 no Moose;
