@@ -12,7 +12,7 @@ use Encode qw( decode );
 use Encode::ZapCP1252 qw( zap_cp1252 );
 use File::Slurp;
 use IO::File;
-use Markdent::Simple::Document;
+use Markdent::Simple::Document 0.22;
 use Text::CSV_XS;
 use Text::Template;
 
@@ -184,6 +184,7 @@ sub run {
 
     $csv->column_names( @{$header} );
 
+    my $last;
     until ( $io->eof() ) {
         my $fields = $csv->getline_hr($io);
 
@@ -206,7 +207,16 @@ sub run {
         }
 
         $self->_record_as_seen( $address => 1 );
+
+        $last = $email;
     }
+
+    print "\n\n",
+        $last->headers()->as_string(),
+        "\n\n",
+        $last->plain_body_part()->content(),
+        "\n\n", $last->html_body_part()->content(), "\n\n"
+        unless $self->send() || $self->test();
 }
 
 sub _check_header {
@@ -231,9 +241,10 @@ sub _create_email {
     my $html = Markdent::Simple::Document->new()->markdown_to_html(
         title    => $subject,
         markdown => $body,
+        dialect  => 'GitHub',
     );
 
-    my $to = $self->test() ? 'autarch@urth.org' : $fields->{email};
+    my $to = $self->test() ? 'autarch@gmail.com' : $fields->{email};
 
     return cb_build_email(
         cb_from( $self->from() ),
